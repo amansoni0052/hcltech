@@ -1,0 +1,43 @@
+// ===== Power BI model =====
+// Import (Oracle connector, or the CSVs in data/processed if you have no Oracle):
+//   vw_daily_dept_occupancy  (or daily_occupancy.csv)   -> fact table "DailyOcc"
+//   fact_admission           (or fact_admission.csv)    -> "Admissions"
+//   dim_department, dim_date
+// Relationships (many-to-one, single direction):
+//   DailyOcc[department_id]   -> dim_department[department_id]
+//   DailyOcc[date_key]        -> dim_date[date_key]
+//   Admissions[department_id] -> dim_department[department_id]
+//   Admissions[admit_date]    -> dim_date[date_key]   (active)
+// Mark dim_date as Date table. Slicers: dim_department[department_name], dim_date[month_name]/[year_num].
+
+Occupied Bed-Days = SUM ( DailyOcc[occupied_beds] )
+Available Bed-Days = SUM ( DailyOcc[bed_capacity] )
+Occupancy % = DIVIDE ( [Occupied Bed-Days], [Available Bed-Days] )
+
+Avg LOS (days) =
+CALCULATE (
+    AVERAGE ( Admissions[los_days] ),
+    Admissions[is_valid] = "Y",
+    Admissions[status] = "DISCHARGED"
+)
+
+Admissions Count = CALCULATE ( COUNTROWS ( Admissions ), Admissions[is_valid] = "Y" )
+Same-Day Discharge % =
+DIVIDE (
+    CALCULATE ( COUNTROWS ( Admissions ), Admissions[same_day_flag] = "Y" ),
+    CALCULATE ( COUNTROWS ( Admissions ), Admissions[is_valid] = "Y", Admissions[status] = "DISCHARGED" )
+)
+
+// Hospital-level daily occupancy (used for peak-day logic; evaluates per date)
+Daily Occupancy % = [Occupancy %]
+Peak Threshold = 0.90
+Is Peak Day = IF ( [Daily Occupancy %] >= [Peak Threshold], 1, 0 )
+Peak Days Count = SUMX ( VALUES ( dim_date[date_key] ), [Is Peak Day] )
+Peak Day Rank = RANKX ( ALL ( dim_date[date_key] ), [Daily Occupancy %], , DESC, DENSE )
+
+// Data quality (cards on a "Data Quality" page)
+Invalid Rows = CALCULATE ( COUNTROWS ( Admissions ), Admissions[is_valid] = "N" )
+Valid Row % = DIVIDE ( [Admissions Count], COUNTROWS ( Admissions ) )
+
+// Conditional formatting colour for occupancy (Format > Background > Rules / Field value)
+Occupancy Colour = SWITCH ( TRUE (), [Occupancy %] >= 0.9, "#C0392B", [Occupancy %] >= 0.8, "#E67E22", "#27AE60" )

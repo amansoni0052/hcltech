@@ -1,0 +1,9 @@
+department_id,department_name,bed_capacity
+1,Emergency,30
+2,General Medicine,60
+3,Surgery,45
+4,Orthopedics,30
+5,Cardiology,35
+6,Pediatrics,25
+7,Maternity,25
+8,ICU,20

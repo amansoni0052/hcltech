@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hospital Bed Occupancy Dashboard</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#f4f6f8;color:#1f2937}
+h1{font-size:20px;margin:0 0 10px}h3{font-size:13px;margin:0 0 6px;color:#374151}
+.bar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px}
+select,button{padding:5px 8px;font-size:13px}.hint{color:#6b7280}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.card{background:#fff;border-radius:8px;padding:10px 12px}.card b{display:block;font-size:24px}.card span{font-size:12px;color:#6b7280}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px}
+.box{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px}.grid .box{margin:0}canvas{width:100%;display:block;cursor:pointer}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:4px 8px;border-bottom:1px solid #eee;text-align:left}
+</style></head><body>
+<h1>Hospital Admissions &amp; Bed Occupancy Dashboard</h1>
+<div class="bar"><label>Department <select id="dept"></select></label><label>Month <select id="month"></select></label>
+<button id="reset">Reset filters</button><span class="hint">Click a month point or a department bar to drill down. Red line = 90% peak threshold. Synthetic data.</span></div>
+<div class="cards" id="cards"></div>
+<div class="grid"><div class="box"><h3>Monthly occupancy %</h3><canvas id="c1"></canvas></div><div class="box"><h3>Occupancy % by department</h3><canvas id="c2"></canvas></div></div>
+<div class="box"><h3 id="t3"></h3><canvas id="c3"></canvas></div>
+<div class="box"><h3>Top 10 peak-load days (current filter)</h3><table id="peak"></table></div>
+<script>
+const D=__DATA__,$=id=>document.getElementById(id),N=D.depts[0].occ.length;
+const dates=[...Array(N)].map((_,i)=>new Date(Date.parse(D.start)+i*864e5).toISOString().slice(0,10));
+const months=[...new Set(dates.map(d=>d.slice(0,7)))];
+$("dept").innerHTML='<option value="all">All departments</option>'+D.depts.map((d,i)=>`<option value="${i}">${d.n}</option>`).join("");
+$("month").innerHTML='<option value="all">All months</option>'+months.map(m=>`<option>${m}</option>`).join("");
+const idxOf=()=>$("dept").value==="all"?D.depts.map((_,i)=>i):[+$("dept").value];
+const occ=(i,idx)=>{let o=0,c=0;for(const k of idx){o+=D.depts[k].occ[i];c+=D.depts[k].cap}return[o,c]};
+function setup(cv,H){const W=cv.clientWidth;cv.width=W*2;cv.height=H*2;cv.style.height=H+"px";const g=cv.getContext("2d");g.scale(2,2);g.font="11px system-ui";return[g,W]}
+function line(cv,labels,vals,mark,H=210){const[g,W]=setup(cv,H),p={l:34,r:10,t:8,b:24},max=Math.max(100,...vals);
+ const x=i=>p.l+(W-p.l-p.r)*(vals.length>1?i/(vals.length-1):.5),y=v=>H-p.b-(H-p.t-p.b)*v/max;
+ g.strokeStyle="#e5e7eb";g.fillStyle="#6b7280";for(let v=0;v<=max;v+=25){g.beginPath();g.moveTo(p.l,y(v));g.lineTo(W-p.r,y(v));g.stroke();g.fillText(v,6,y(v)+4)}
+ g.strokeStyle="#c0392b";g.setLineDash([4,3]);g.beginPath();g.moveTo(p.l,y(90));g.lineTo(W-p.r,y(90));g.stroke();g.setLineDash([]);
+ g.strokeStyle="#2563eb";g.lineWidth=2;g.beginPath();vals.forEach((v,i)=>i?g.lineTo(x(i),y(v)):g.moveTo(x(i),y(v)));g.stroke();
+ g.fillStyle="#6b7280";const st=Math.ceil(labels.length/9);labels.forEach((l,i)=>{if(i%st===0)g.fillText(l,Math.max(0,x(i)-16),H-6)});
+ if(mark!==undefined)vals.forEach((v,i)=>{g.fillStyle=labels[i]===mark?"#f97316":"#2563eb";g.beginPath();g.arc(x(i),y(v),labels[i]===mark?6:3.5,0,7);g.fill()});
+ cv._pts=vals.map((v,i)=>x(i))}
+function bars(cv,names,vals,mark){const H=names.length*26+8,[g,W]=setup(cv,H),L=120,max=Math.max(100,...vals);
+ names.forEach((n,i)=>{const y=i*26+4,w=(W-L-50)*vals[i]/max;g.fillStyle="#374151";g.fillText(n,4,y+14);
+  g.fillStyle=vals[i]>=90?"#c0392b":vals[i]>=80?"#e67e22":"#27ae60";if(i===mark)g.fillStyle="#2563eb";g.fillRect(L,y,w,18);g.fillStyle="#111";g.fillText(vals[i].toFixed(1)+"%",L+w+4,y+13)});
+ cv._rows=names.length}
+function render(){
+ const idx=idxOf(),m=$("month").value,days=dates.map((_,i)=>i).filter(i=>m==="all"||dates[i].startsWith(m));
+ let O=0,C=0,pk=0,rows=[];for(const i of days){const[o,c]=occ(i,idx),p=100*o/c;O+=o;C+=c;if(p>=90)pk++;rows.push({i,o,c,p})}
+ let ls=0,ln=0,sd=0;for(const k in D.los){const[dk,mo]=k.split("|");if(idx.includes(+dk)&&(m==="all"||mo===m)){const v=D.los[k];ls+=v[0];ln+=v[1];sd+=v[2]}}
+ const cd=[["Occupancy %",(100*O/C).toFixed(1)+"%"],["Avg length of stay",(ls/ln).toFixed(2)+" days"],["Same-day discharge",(100*sd/ln).toFixed(1)+"%"],["Peak days (>=90%)",pk],["Completed stays",ln.toLocaleString()]];
+ $("cards").innerHTML=cd.map(c=>`<div class="card"><b>${c[1]}</b><span>${c[0]}</span></div>`).join("");
+ const mv=months.map(mo=>{let o=0,c=0;dates.forEach((d,i)=>{if(d.startsWith(mo)){const r=occ(i,idx);o+=r[0];c+=r[1]}});return 100*o/c});
+ line($("c1"),months,mv,m==="all"?undefined:m);
+ const dv=D.depts.map((d,k)=>{let o=0,c=0;for(const i of days){o+=d.occ[i];c+=d.cap}return 100*o/c});
+ bars($("c2"),D.depts.map(d=>d.n),dv,$("dept").value==="all"?-1:+$("dept").value);
+ $("t3").textContent="Daily occupancy % - "+($("dept").value==="all"?"all departments":D.depts[+$("dept").value].n)+" - "+(m==="all"?"all months":m);
+ line($("c3"),days.map(i=>dates[i]),rows.map(r=>r.p));
+ const top=[...rows].sort((a,b)=>b.p-a.p).slice(0,10);
+ $("peak").innerHTML="<tr><th>Date</th><th>Day</th><th>Occupied / Capacity</th><th>Occupancy %</th></tr>"+top.map(r=>`<tr><td>${dates[r.i]}</td><td>${new Date(dates[r.i]).toUTCString().slice(0,3)}</td><td>${r.o} / ${r.c}</td><td>${r.p.toFixed(1)}%</td></tr>`).join("")}
+$("c1").onclick=e=>{const cv=$("c1"),x=e.offsetX;let b=0;cv._pts.forEach((p,i)=>{if(Math.abs(p-x)<Math.abs(cv._pts[b]-x))b=i});$("month").value=months[b];render()};
+$("c2").onclick=e=>{const k=Math.floor((e.offsetY-4)/26);if(k>=0&&k<D.depts.length){$("dept").value=k;render()}};
+$("dept").onchange=$("month").onchange=render;$("reset").onclick=()=>{$("dept").value=$("month").value="all";render()};
+addEventListener("resize",render);render();
+</script></body></html>

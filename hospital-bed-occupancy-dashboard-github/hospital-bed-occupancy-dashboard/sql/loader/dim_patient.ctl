@@ -1,0 +1,5 @@
+OPTIONS (SKIP=1, ROWS=5000)
+LOAD DATA INFILE '../../data/processed/dim_patient.csv'
+APPEND INTO TABLE dim_patient
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' TRAILING NULLCOLS
+(patient_id, gender)
